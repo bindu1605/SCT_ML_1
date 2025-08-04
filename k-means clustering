@@ -1,0 +1,130 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+import joblib
+
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+
+import warnings
+warnings.filterwarnings("ignore")
+
+
+# Load data with fallback
+file_path = r"C:\Users\balas\OneDrive\Desktop\internship 1\skillcraft 1\NY-House-Dataset.csv"
+
+try:
+    df = pd.read_csv(file_path)
+    print(f"Dataset loaded successfully. Shape: {df.shape}")
+except FileNotFoundError:
+    print(f"File not found: {file_path}")
+    raise
+
+
+# Show first few rows and column summary
+print(df.head())
+print("\nColumn types:")
+print(df.dtypes)
+
+
+# Display missing value counts
+missing = df.isnull().sum()
+print("Missing values per column:")
+print(missing[missing > 0])
+
+
+# Filter numeric columns
+numeric_df = df.select_dtypes(include=np.number)
+
+# Drop columns with more than 20% missing
+valid_columns = numeric_df.columns[numeric_df.isnull().mean() < 0.2]
+filtered_df = numeric_df[valid_columns]
+
+# Drop rows with missing 'SalePrice'
+filtered_df = filtered_df.dropna(subset=['PRICE'])
+
+# Correlation with SalePrice
+correlation = filtered_df.corr()['PRICE'].sort_values(ascending=False)
+print("Top correlated features with Price:")
+print(correlation.head(10))
+
+
+final_features = ['PROPERTYSQFT', 'BEDS', 'BATH']
+target = 'PRICE'
+
+# Prepare features and target
+X = filtered_df[final_features]
+y = filtered_df[target]
+
+
+# Use mean imputation for numerical features
+imputer = SimpleImputer(strategy='mean')
+X_imputed = pd.DataFrame(imputer.fit_transform(X), columns=final_features)
+
+# Confirm shapes
+print(f"Features shape: {X_imputed.shape}, Target shape: {y.shape}")
+
+
+X_train, X_val, y_train, y_val = train_test_split(X_imputed, y, test_size=0.2, random_state=42)
+
+print(f"Training samples: {X_train.shape[0]}")
+print(f"Validation samples: {X_val.shape[0]}")
+
+
+# Scaling + Linear Regression
+model_pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('regressor', LinearRegression())
+])
+
+model_pipeline.fit(X_train, y_train)
+print("Model training completed.")
+
+
+y_pred = model_pipeline.predict(X_val)
+
+rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+r2 = r2_score(y_val, y_pred)
+
+print(f"RMSE: {rmse:.2f}")
+print(f"R2 Score: {r2:.2f}")
+
+
+os.makedirs('../models', exist_ok=True)
+joblib.dump(model_pipeline, '../models/ny_house_price_model.pkl')
+print("Model saved to '../models/ny_house_price_model.pkl'")
+
+
+from joblib import load
+
+# Define model path
+model_path = '../models/ny_house_price_model.pkl'
+
+# Load model from disk
+try:
+    loaded_model = load(model_path)
+    print("Model loaded successfully.")
+except FileNotFoundError:
+    print(f"Model file not found at path: {model_path}")
+    raise
+except Exception as e:
+    print("An error occurred while loading the model:", str(e))
+    raise
+
+# View the pipeline structure
+print("\nPipeline structure:")
+print(loaded_model)
+
+# View model parameters
+if 'regressor' in loaded_model.named_steps:
+    regressor = loaded_model.named_steps['regressor']
+    print("\nRegressor Coefficients:")
+    print(regressor.coef_)
+    print("\nRegressor Intercept:")
+    print(regressor.intercept_)
